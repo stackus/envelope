@@ -1,0 +1,10 @@
+edition = "2023";
+
+package envelope;
+
+option go_package = ".;envelope";
+
+message Envelope {
+	string key = 1;
+	bytes payload = 2;
+}
