@@ -12,6 +12,10 @@ type (
 	}
 )
 
+// NewRegistry creates a new envelope registry.
+//
+// The registry is used to register types that can be serialized as concrete types, then
+// deserialized back into their original types without knowing ahead of time what those types are.
 func NewRegistry(opts ...RegistryOption) (Registry, error) {
 	r := &registry{
 		registrations: make(map[string]func() any),
@@ -28,10 +32,21 @@ func NewRegistry(opts ...RegistryOption) (Registry, error) {
 	return r, nil
 }
 
+// Register registers a type with the registry.
+//
+// The envelope key is the fully qualified type name of the type being registered,
+// or the key will be the result of calling the EnvelopeKey method on the type
+// being registered.
 func (r *registry) Register(v any) error {
 	return register(r, v)
 }
 
+// RegisterFactory registers a factory function with the registry.
+//
+// The factory function should return a pointer to the type being registered.
+// The envelope key is the fully qualified type name of the type being registered,
+// or the key will be the result of calling the EnvelopeKey method on the type
+// being registered.
 func (r *registry) RegisterFactory(fn func() any) error {
 	var v any
 
@@ -48,6 +63,10 @@ func (r *registry) RegisterFactory(fn func() any) error {
 	return r.register(key, fn)
 }
 
+// Serialize serializes a value into a byte slice safe for storage.
+//
+// The value must be registered with the registry before it can be serialized,
+// otherwise calls will return an ErrUnregisteredKey error.
 func (r *registry) Serialize(v any) ([]byte, error) {
 	key := getKey(v)
 
@@ -68,6 +87,10 @@ func (r *registry) Serialize(v any) ([]byte, error) {
 	return r.envelopeSerde.Serialize(envelope)
 }
 
+// Deserialize deserializes a byte slice into a value.
+//
+// The byte slice must have been serialized using the Serialize method of the registry,
+// otherwise calls will return an ErrUnregisteredKey error.
 func (r *registry) Deserialize(data []byte) (any, error) {
 	envelope := new(Envelope)
 	if err := r.envelopeSerde.Deserialize(data, envelope); err != nil {
@@ -86,6 +109,22 @@ func (r *registry) Deserialize(data []byte) (any, error) {
 	}
 
 	return v, nil
+}
+
+// IsRegistered returns true if the type is registered with the registry.
+func (r *registry) IsRegistered(v any) bool {
+	_, exists := r.registrations[getKey(v)]
+	return exists
+}
+
+// Build creates a new instance of a registered type.
+func (r *registry) Build(key string) (any, error) {
+	fn, exists := r.registrations[key]
+	if !exists {
+		return nil, ErrUnregisteredKey(key)
+	}
+
+	return fn(), nil
 }
 
 func (r *registry) register(key string, fn func() any) error {

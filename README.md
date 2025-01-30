@@ -1,5 +1,8 @@
 # Envelope
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/stackus/envelope)](https://goreportcard.com/report/github.com/stackus/envelope)
+[![](https://godoc.org/github.com/stackus/envelope?status.svg)](https://pkg.go.dev/github.com/stackus/envelope)
+
 This Go library is designed to simplify the serialization and deserialization of concrete types into interfaces.
 
 This library is for all those times you've wanted to unmarshal some data, and all you know ahead of time is that it's an interface type.
