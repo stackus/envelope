@@ -1,17 +1,15 @@
 package envelope
 
-type RegistryOption func(*registry) error
+type RegistryOption func(*registry)
 
 func WithSerde(serde Serde) RegistryOption {
-	return func(r *registry) error {
+	return func(r *registry) {
 		r.serde = serde
-		return nil
 	}
 }
 
 func WithEnvelopeSerde(serde Serde) RegistryOption {
-	return func(r *registry) error {
+	return func(r *registry) {
 		r.envelopeSerde = serde
-		return nil
 	}
 }

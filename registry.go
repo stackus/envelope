@@ -5,10 +5,24 @@ import (
 )
 
 type (
+	Registry interface {
+		Register(vs ...any) error
+		RegisterFactory(fns ...func() any) error
+		Serialize(v any) ([]byte, error)
+		Deserialize(data []byte) (any, error)
+		IsRegistered(v any) bool
+		Build(key string) (any, error)
+	}
+
+	Serde interface {
+		Serialize(any) ([]byte, error)
+		Deserialize([]byte, any) error
+	}
+
 	registry struct {
 		serde         Serde
 		envelopeSerde Serde
-		registrations map[string]func() any
+		factories     map[string]func() any
 	}
 )
 
@@ -16,51 +30,68 @@ type (
 //
 // The registry is used to register types that can be serialized as concrete types, then
 // deserialized back into their original types without knowing ahead of time what those types are.
-func NewRegistry(opts ...RegistryOption) (Registry, error) {
+func NewRegistry(opts ...RegistryOption) Registry {
 	r := &registry{
-		registrations: make(map[string]func() any),
+		factories:     make(map[string]func() any),
 		serde:         JsonSerde{},
 		envelopeSerde: ProtoSerde{},
 	}
 
 	for _, opt := range opts {
-		if err := opt(r); err != nil {
-			return nil, err
-		}
+		opt(r)
 	}
 
-	return r, nil
+	return r
 }
 
-// Register registers a type with the registry.
+// Register registers one or more types with the registry.
 //
 // The envelope key is the fully qualified type name of the type being registered,
 // or the key will be the result of calling the EnvelopeKey method on the type
 // being registered.
-func (r *registry) Register(v any) error {
-	return register(r, v)
+func (r *registry) Register(vs ...any) error {
+	for _, v := range vs {
+		key := getKey(v)
+		t := reflect.TypeOf(v)
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		if err := r.register(key, func() any {
+			return reflect.New(t).Interface()
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// RegisterFactory registers a factory function with the registry.
+// RegisterFactory registers one or more factory functions with the registry.
 //
 // The factory function should return a pointer to the type being registered.
 // The envelope key is the fully qualified type name of the type being registered,
 // or the key will be the result of calling the EnvelopeKey method on the type
 // being registered.
-func (r *registry) RegisterFactory(fn func() any) error {
-	var v any
+func (r *registry) RegisterFactory(fns ...func() any) error {
+	for _, fn := range fns {
+		var v any
 
-	if v = fn(); v == nil {
-		return ErrFactoryReturnsNil("")
+		if v = fn(); v == nil {
+			return ErrFactoryReturnsNil("")
+		}
+
+		key := getKey(v)
+
+		if t := reflect.TypeOf(v); t.Kind() != reflect.Ptr {
+			return ErrFactoryDoesNotReturnPointer(key)
+		}
+
+		if err := r.register(key, fn); err != nil {
+			return err
+		}
 	}
 
-	key := getKey(v)
-
-	if t := reflect.TypeOf(v); t.Kind() != reflect.Ptr {
-		return ErrFactoryDoesNotReturnPointer(key)
-	}
-
-	return r.register(key, fn)
+	return nil
 }
 
 // Serialize serializes a value into a byte slice safe for storage.
@@ -70,7 +101,7 @@ func (r *registry) RegisterFactory(fn func() any) error {
 func (r *registry) Serialize(v any) ([]byte, error) {
 	key := getKey(v)
 
-	if _, exists := r.registrations[key]; !exists {
+	if _, exists := r.factories[key]; !exists {
 		return nil, ErrUnregisteredKey(key)
 	}
 
@@ -98,7 +129,7 @@ func (r *registry) Deserialize(data []byte) (any, error) {
 	}
 
 	key := *envelope.Key
-	fn, exists := r.registrations[key]
+	fn, exists := r.factories[key]
 	if !exists {
 		return nil, ErrUnregisteredKey(key)
 	}
@@ -113,13 +144,13 @@ func (r *registry) Deserialize(data []byte) (any, error) {
 
 // IsRegistered returns true if the type is registered with the registry.
 func (r *registry) IsRegistered(v any) bool {
-	_, exists := r.registrations[getKey(v)]
+	_, exists := r.factories[getKey(v)]
 	return exists
 }
 
 // Build creates a new instance of a registered type.
 func (r *registry) Build(key string) (any, error) {
-	fn, exists := r.registrations[key]
+	fn, exists := r.factories[key]
 	if !exists {
 		return nil, ErrUnregisteredKey(key)
 	}
@@ -128,25 +159,12 @@ func (r *registry) Build(key string) (any, error) {
 }
 
 func (r *registry) register(key string, fn func() any) error {
-	if _, exists := r.registrations[key]; exists {
+	if _, exists := r.factories[key]; exists {
 		return ErrReregisteredKey(key)
 	}
 
-	r.registrations[key] = fn
+	r.factories[key] = fn
 	return nil
-}
-
-func register[T any](reg *registry, v T) error {
-	key := getKey(v)
-	if t := reflect.TypeOf(v); t.Kind() == reflect.Ptr {
-		return reg.register(key, func() any {
-			return reflect.New(t.Elem()).Interface()
-		})
-	}
-
-	return reg.register(key, func() any {
-		return new(T)
-	})
 }
 
 func getKey(v any) string {

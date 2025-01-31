@@ -55,7 +55,7 @@ func (brokenDeserializer) Deserialize(data []byte, v any) error {
 
 func TestRegistry_Register(t *testing.T) {
 	type args struct {
-		v       any
+		v       []any
 		options []envelope.RegistryOption
 	}
 	tests := map[string]struct {
@@ -66,23 +66,49 @@ func TestRegistry_Register(t *testing.T) {
 		"success": {
 			options: []envelope.RegistryOption{},
 			args: args{
-				v: &Test{},
+				v: []any{
+					&Test{},
+				},
 			},
 			wantErr: false,
 		},
 		"keyed success": {
 			options: []envelope.RegistryOption{},
 			args: args{
-				v: &KeyedTest{},
+				v: []any{
+					&KeyedTest{},
+				},
+			},
+			wantErr: false,
+		},
+		"multiple": {
+			options: []envelope.RegistryOption{},
+			args: args{
+				v: []any{
+					&Test{},
+					&KeyedTest{},
+				},
 			},
 			wantErr: false,
 		},
 		"allow no pointer": {
 			options: []envelope.RegistryOption{},
 			args: args{
-				v: Test{},
+				v: []any{
+					Test{},
+				},
 			},
 			wantErr: false,
+		},
+		"multiple same": {
+			options: []envelope.RegistryOption{},
+			args: args{
+				v: []any{
+					&Test{},
+					Test{},
+				},
+			},
+			wantErr: true,
 		},
 		"set serdes": {
 			options: []envelope.RegistryOption{
@@ -90,7 +116,9 @@ func TestRegistry_Register(t *testing.T) {
 				envelope.WithEnvelopeSerde(envelope.JsonSerde{}), // use the Json one
 			},
 			args: args{
-				v: &Test{},
+				v: []any{
+					&Test{},
+				},
 			},
 			wantErr: false,
 		},
@@ -98,8 +126,8 @@ func TestRegistry_Register(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			r, _ := envelope.NewRegistry(tt.options...)
-			if err := r.Register(tt.args.v); (err != nil) != tt.wantErr {
+			r := envelope.NewRegistry(tt.options...)
+			if err := r.Register(tt.args.v...); (err != nil) != tt.wantErr {
 				t.Errorf("Registry.Register() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -112,22 +140,55 @@ func TestRegistry_RegisterFactory(t *testing.T) {
 	}
 	tests := map[string]struct {
 		options []envelope.RegistryOption
-		args    args
+		args    []func() any
 		wantErr bool
 	}{
 		"success": {
 			options: []envelope.RegistryOption{},
-			args: args{
-				fn: func() any {
+			args: []func() any{
+				func() any {
 					return &Test{}
 				},
 			},
 			wantErr: false,
 		},
+		"keyed success": {
+			options: []envelope.RegistryOption{},
+			args: []func() any{
+				func() any {
+					return &KeyedTest{}
+				},
+			},
+			wantErr: false,
+		},
+		"multiple": {
+			options: []envelope.RegistryOption{},
+			args: []func() any{
+				func() any {
+					return &Test{}
+				},
+				func() any {
+					return &KeyedTest{}
+				},
+			},
+			wantErr: false,
+		},
+		"multiple same": {
+			options: []envelope.RegistryOption{},
+			args: []func() any{
+				func() any {
+					return &Test{}
+				},
+				func() any {
+					return &Test{}
+				},
+			},
+			wantErr: true,
+		},
 		"not pointer": {
 			options: []envelope.RegistryOption{},
-			args: args{
-				fn: func() any {
+			args: []func() any{
+				func() any {
 					return Test{}
 				},
 			},
@@ -135,8 +196,8 @@ func TestRegistry_RegisterFactory(t *testing.T) {
 		},
 		"nil": {
 			options: []envelope.RegistryOption{},
-			args: args{
-				fn: func() any {
+			args: []func() any{
+				func() any {
 					return nil
 				},
 			},
@@ -146,8 +207,8 @@ func TestRegistry_RegisterFactory(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			r, _ := envelope.NewRegistry(tt.options...)
-			if err := r.RegisterFactory(tt.args.fn); (err != nil) != tt.wantErr {
+			r := envelope.NewRegistry(tt.options...)
+			if err := r.RegisterFactory(tt.args...); (err != nil) != tt.wantErr {
 				t.Errorf("Registry.RegisterFactory() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -165,7 +226,7 @@ func TestRegistry_Serialize(t *testing.T) {
 	}{
 		"success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -176,7 +237,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"keyed success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&KeyedTest{})
 				return r
 			}(),
@@ -187,7 +248,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"allow no pointer": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -198,7 +259,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"set serdes": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithSerde(envelope.JsonSerde{}),
 					envelope.WithEnvelopeSerde(envelope.JsonSerde{}),
 				)
@@ -212,7 +273,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"nothing registered": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				return r
 			}(),
 			args: args{
@@ -222,7 +283,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"envelope error": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithEnvelopeSerde(brokenSerializer{}),
 				)
 				_ = r.Register(&Test{})
@@ -235,7 +296,7 @@ func TestRegistry_Serialize(t *testing.T) {
 		},
 		"payload error": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithSerde(brokenSerializer{}),
 				)
 				_ = r.Register(&Test{})
@@ -268,7 +329,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 	}{
 		"success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -281,7 +342,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 		},
 		"keyed success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&KeyedTest{})
 				return r
 			}(),
@@ -294,7 +355,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 		},
 		"allow no pointer": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -307,7 +368,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 		},
 		"set serdes": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithSerde(envelope.JsonSerde{}),
 					envelope.WithEnvelopeSerde(envelope.JsonSerde{}),
 				)
@@ -323,7 +384,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 		},
 		"envelope error": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithEnvelopeSerde(brokenDeserializer{}),
 				)
 				_ = r.Register(&Test{})
@@ -338,7 +399,7 @@ func TestRegistry_Deserialize(t *testing.T) {
 		},
 		"payload error": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithSerde(brokenDeserializer{}),
 				)
 				_ = r.Register(&Test{})
@@ -381,7 +442,7 @@ func TestRegistry_Build(t *testing.T) {
 	}{
 		"success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -392,7 +453,7 @@ func TestRegistry_Build(t *testing.T) {
 		},
 		"keyed success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&KeyedTest{})
 				return r
 			}(),
@@ -403,7 +464,7 @@ func TestRegistry_Build(t *testing.T) {
 		},
 		"allow no pointer": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -414,7 +475,7 @@ func TestRegistry_Build(t *testing.T) {
 		},
 		"set serdes": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry(
+				r := envelope.NewRegistry(
 					envelope.WithSerde(envelope.JsonSerde{}),
 					envelope.WithEnvelopeSerde(envelope.JsonSerde{}),
 				)
@@ -428,7 +489,7 @@ func TestRegistry_Build(t *testing.T) {
 		},
 		"not registered": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				return r
 			}(),
 			args: args{
@@ -458,7 +519,7 @@ func TestRegistry_IsRegistered(t *testing.T) {
 	}{
 		"success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -469,7 +530,7 @@ func TestRegistry_IsRegistered(t *testing.T) {
 		},
 		"keyed success": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&KeyedTest{})
 				return r
 			}(),
@@ -480,7 +541,7 @@ func TestRegistry_IsRegistered(t *testing.T) {
 		},
 		"allow no pointer": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				_ = r.Register(&Test{})
 				return r
 			}(),
@@ -491,7 +552,7 @@ func TestRegistry_IsRegistered(t *testing.T) {
 		},
 		"not registered": {
 			registry: func() envelope.Registry {
-				r, _ := envelope.NewRegistry()
+				r := envelope.NewRegistry()
 				return r
 			}(),
 			args: args{
