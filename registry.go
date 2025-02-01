@@ -5,11 +5,17 @@ import (
 )
 
 type (
+	Envelope interface {
+		Key() string   // Key returns the key of the envelope value
+		Payload() any  // Payload returns the value of the envelope
+		Bytes() []byte // Bytes returns the serialized envelope containing the key and payload
+	}
+
 	Registry interface {
 		Register(vs ...any) error
 		RegisterFactory(fns ...func() any) error
-		Serialize(v any) ([]byte, error)
-		Deserialize(data []byte) (any, error)
+		Serialize(v any) (Envelope, error)
+		Deserialize(data []byte) (Envelope, error)
 		IsRegistered(v any) bool
 		Build(key string) (any, error)
 	}
@@ -17,6 +23,12 @@ type (
 	Serde interface {
 		Serialize(any) ([]byte, error)
 		Deserialize([]byte, any) error
+	}
+
+	envelope struct {
+		key     string
+		payload any
+		data    []byte
 	}
 
 	registry struct {
@@ -98,7 +110,7 @@ func (r *registry) RegisterFactory(fns ...func() any) error {
 //
 // The value must be registered with the registry before it can be serialized,
 // otherwise calls will return an ErrUnregisteredKey error.
-func (r *registry) Serialize(v any) ([]byte, error) {
+func (r *registry) Serialize(v any) (Envelope, error) {
 	key := getKey(v)
 
 	if _, exists := r.factories[key]; !exists {
@@ -110,36 +122,49 @@ func (r *registry) Serialize(v any) ([]byte, error) {
 		return nil, err
 	}
 
-	envelope := &Envelope{
+	msg := &EnvelopeMsg{
 		Key:     &key,
 		Payload: data,
 	}
 
-	return r.envelopeSerde.Serialize(envelope)
+	data, err = r.envelopeSerde.Serialize(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &envelope{
+		key:     key,
+		payload: v,
+		data:    data,
+	}, nil
 }
 
 // Deserialize deserializes a byte slice into a value.
 //
 // The byte slice must have been serialized using the Serialize method of the registry,
 // otherwise calls will return an ErrUnregisteredKey error.
-func (r *registry) Deserialize(data []byte) (any, error) {
-	envelope := new(Envelope)
-	if err := r.envelopeSerde.Deserialize(data, envelope); err != nil {
+func (r *registry) Deserialize(data []byte) (Envelope, error) {
+	msg := new(EnvelopeMsg)
+	if err := r.envelopeSerde.Deserialize(data, msg); err != nil {
 		return nil, err
 	}
 
-	key := *envelope.Key
+	key := *msg.Key
 	fn, exists := r.factories[key]
 	if !exists {
 		return nil, ErrUnregisteredKey(key)
 	}
 
 	v := fn()
-	if err := r.serde.Deserialize(envelope.Payload, v); err != nil {
+	if err := r.serde.Deserialize(msg.Payload, v); err != nil {
 		return nil, err
 	}
 
-	return v, nil
+	return &envelope{
+		key:     key,
+		payload: v,
+		data:    data,
+	}, nil
 }
 
 // IsRegistered returns true if the type is registered with the registry.
@@ -167,7 +192,25 @@ func (r *registry) register(key string, fn func() any) error {
 	return nil
 }
 
+func (e *envelope) Key() string {
+	return e.key
+}
+
+func (e *envelope) Payload() any {
+	return e.payload
+}
+
+func (e *envelope) Bytes() []byte {
+	return e.data
+}
+
 func getKey(v any) string {
+	prefix := ""
+
+	// get an optional prefix for the key
+	if prefixer, ok := v.(interface{ EnvelopeKeyPrefix() string }); ok {
+		prefix = prefixer.EnvelopeKeyPrefix()
+	}
 	// get the getKey from the envelope name
 	if keyer, ok := v.(interface{ EnvelopeKey() string }); ok {
 		return keyer.EnvelopeKey()
@@ -178,5 +221,5 @@ func getKey(v any) string {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	return t.String()
+	return prefix + t.String()
 }

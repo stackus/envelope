@@ -4,7 +4,7 @@ package envelope;
 
 option go_package = ".;envelope";
 
-message Envelope {
+message EnvelopeMsg {
 	string key = 1;
 	bytes payload = 2;
 }

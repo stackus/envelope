@@ -53,20 +53,20 @@ userCreated := UserCreated{
 	FirstName: "John",
 	LastName:  "Doe",
 }
-data, err := reg.Serialize(userCreated)
+envelope, err := reg.Serialize(userCreated)
 if err != nil {
 	fmt.Println(err)
 	return
 }
 
 // Deserialize the type
-event, err := reg.Deserialize(data)
+received, err := reg.Deserialize(envelope.Bytes())
 if err != nil {
 	fmt.Println(err)
 	return
 }
 
-switch e := event.(type) {
+switch e := received.Payload().(type) {
 case *UserCreated:
 	fmt.Println(e.FirstName, e.LastName)
 }
@@ -135,7 +135,7 @@ reg.RegisterFactory(func() any {
 })
 ```
 
-You may also register types with a custom name by adding the following method on the type:
+You may register types with a custom name by adding the following method on the type:
 
 ```go
 func (UserCreated) EnvelopeKey() string {
@@ -143,8 +143,25 @@ func (UserCreated) EnvelopeKey() string {
 }
 ```
 
+An optional `EnvelopeKeyPrefix` can also be used to prefix all envelope keys.
+You can use the prefix with and without also using the `EnvelopeKey` method. 
+
+```go
+type DomainPrefix struct{}
+
+func (DomainPrefix) EnvelopeKeyPrefix() string {
+	return "myDomain."
+}
+
+type UserCreated struct {
+	DomainPrefix
+	FirstName string
+	LastName  string
+}
+```
+
 ### Serialize & Deserialize
-With your types registered, you can now serialize and deserialize them.
+With your types registered, you can now serialize and deserialize them into an `Envelope`.
 
 ```go
 // UserCreated implements the Event interface
@@ -153,26 +170,42 @@ userCreated := UserCreated{
 	LastName: "Doe",
 }
 
-// Serialize the user
-data, err := reg.Serialize(userCreated)
+// Serialize the user into an envelope
+envelope, err := reg.Serialize(userCreated)
 if err != nil {
 	fmt.Println(err)
 	return
 }
+
+// Print the envelope key for the sealed type
+fmt.Println(envelope.Key())
+
+// Get the entire envelope as []byte
+data := envelope.Bytes()
 
 // store the data in a database, message queue, etc. then read it back in a later process
 
-// Deserialize the event
-event, err := reg.Deserialize(data)
+// Deserialize the data back into an envelope
+received, err := reg.Deserialize(data)
 if err != nil {
 	fmt.Println(err)
 	return
 }
-switch e := event.(type) {
+switch e := received.Payload().(type) {
 case *UserCreated:
 	fmt.Println(e.FirstName, e.LastName)
 default:
 	fmt.Printf("Unknown event type: %T\n", e)
+}
+```
+
+`Envelope` has the following interface:
+
+```go
+type Envelope interface {
+	Key() string
+	Payload() any
+	Bytes() []byte
 }
 ```
 
